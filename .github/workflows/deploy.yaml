@@ -123,19 +123,19 @@ jobs:
                 environment:
                   - MONGODB_URI=${{ secrets.MONGODB_URI }}
                   - JWT_SECRET=${{ secrets.JWT_SECRET }}
-                  - ORIGIN=${{ORIGIN}}
+                  - ORIGIN=${{ secrets.ORIGIN }}
 
               frontend:
                 image: ${{secrets.DOCKER_USERNAME}}/pollingapp-frontend:latest
                 ports:
                   - '3000:3000'
                 environment:
-                  - NEXT_PUBLIC_CORBADO_PROJECT_ID=${{NEXT_PUBLIC_CORBADO_PROJECT_ID}}
-                  - CORBADO_API_SECRET=${{CORBADO_API_SECRET}}
-                  - FRONTEND_API=${{FRONTEND_API}}
-                  - BACKEND_API=${{BACKEND_API}}
-                  - NEXT_PUBLIC_BACKEND_URL=${{NEXT_PUBLIC_BACKEND_URL}}
-                  - NEXT_PUBLIC_FRONTEND_URL=${{NEXT_PUBLIC_FRONTEND_URL}}
+                  - NEXT_PUBLIC_CORBADO_PROJECT_ID=${{ secrets.NEXT_PUBLIC_CORBADO_PROJECT_ID }}
+                  - CORBADO_API_SECRET=${{ secrets.CORBADO_API_SECRET }}
+                  - FRONTEND_API=${{ secrets.FRONTEND_API }}
+                  - BACKEND_API=${{ secrets.BACKEND_API }}
+                  - NEXT_PUBLIC_BACKEND_URL=${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
+                  - NEXT_PUBLIC_FRONTEND_URL=${{ secrets.NEXT_PUBLIC_FRONTEND_URL }}
                 depends_on:
                   - backend
             " > /home/ubuntu/docker-compose.yml
