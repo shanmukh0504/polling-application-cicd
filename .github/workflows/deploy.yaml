@@ -34,8 +34,9 @@ jobs:
       - name: Build and push backend Docker image to Docker Hub
         run: |
           docker build -f backend/Dockerfile \
-          --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
+          --build-arg MONGODB_URI=${{ secrets.MONGODB_URI }} \
           --build-arg JWT_SECRET=${{ secrets.JWT_SECRET }} \
+          --build-arg ORIGIN=${{ secrets.ORIGIN }} \
           -t $DOCKER_USERNAME/pollingapp-backend:$IMAGE_TAG backend
 
           # Log in to Docker Hub
@@ -58,7 +59,12 @@ jobs:
         run: |
           # Build frontend image
           docker build -f frontend/Dockerfile \
-            --build-arg NEXT_PUBLIC_API_URL=http://${{ secrets.SERVER_URL }}:3030 \
+            --build-arg NEXT_PUBLIC_CORBADO_PROJECT_ID=${{ secrets.NEXT_PUBLIC_CORBADO_PROJECT_ID }} \
+            --build-arg CORBADO_API_SECRET=${{ secrets.CORBADO_API_SECRET }} \
+            --build-arg FRONTEND_API=${{ secrets.FRONTEND_API }} \
+            --build-arg BACKEND_API=${{ secrets.BACKEND_API }} \
+            --build-arg NEXT_PUBLIC_BACKEND_URL=${{ secrets.NEXT_PUBLIC_BACKEND_URL }} \
+            --build-arg NEXT_PUBLIC_FRONTEND_URL=${{ secrets.NEXT_PUBLIC_FRONTEND_URL }} \
             -t $DOCKER_USERNAME/pollingapp-frontend:$IMAGE_TAG frontend
 
           # Push the frontend image to Docker Hub
