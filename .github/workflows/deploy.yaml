@@ -1,0 +1,142 @@
+name: Deploy to AWS EC2 with Docker
+
+on:
+  push:
+    branches:
+      - main # Trigger deployment on pushes to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ap-south-1 # AWS region
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }} # Docker Hub username
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }} # Docker Hub password
+      IMAGE_TAG: latest # Image tag for both frontend and backend
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Cache Docker layers for the backend
+      - name: Cache Docker layers for backend
+        id: backend-cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-backend-${{ hashFiles('backend/Dockerfile', 'backend/**/*') }}
+          restore-keys: |
+            ${{ runner.os }}-docker-backend-
+
+      # 2. Build and push the backend Docker image to Docker Hub
+      - name: Build and push backend Docker image to Docker Hub
+        run: |
+          docker build -f backend/Dockerfile \
+          --build-arg DATABASE_URL=${{ secrets.DATABASE_URL }} \
+          --build-arg JWT_SECRET=${{ secrets.JWT_SECRET }} \
+          -t $DOCKER_USERNAME/pollingapp-backend:$IMAGE_TAG backend
+
+          # Log in to Docker Hub
+          echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin
+
+          # Push the backend image to Docker Hub
+          docker push $DOCKER_USERNAME/pollingapp-backend:$IMAGE_TAG
+
+      - name: Cache Docker layers for frontend
+        id: frontend-cache
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-docker-frontend-${{ hashFiles('frontend/Dockerfile', 'frontend/**/*') }}
+          restore-keys: |
+            ${{ runner.os }}-docker-frontend-
+
+      # 3. Build and push the frontend Docker image to Docker Hub
+      - name: Build and push frontend Docker image to Docker Hub
+        run: |
+          # Build frontend image
+          docker build -f frontend/Dockerfile \
+            --build-arg NEXT_PUBLIC_API_URL=http://${{ secrets.SERVER_URL }}:3030 \
+            -t $DOCKER_USERNAME/pollingapp-frontend:$IMAGE_TAG frontend
+
+          # Push the frontend image to Docker Hub
+          docker push $DOCKER_USERNAME/pollingapp-frontend:$IMAGE_TAG
+
+      # 4. SSH into EC2 and install Docker and Docker Compose
+      - name: SSH into EC2 and Install Docker
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Update the system
+            sudo apt-get update -y
+
+            # Install dependencies
+            sudo apt-get install -y \
+              apt-transport-https \
+              ca-certificates \
+              curl \
+              software-properties-common
+
+            # Install Docker
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+
+            # Install Docker Compose
+            sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+
+            # Start Docker service
+            sudo systemctl enable docker
+            sudo systemctl start docker
+
+      # 5. SSH into EC2 to deploy containers
+      - name: SSH into EC2 and deploy containers
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Pull the Docker images from Docker Hub
+            docker pull ${{secrets.DOCKER_USERNAME}}/pollingapp-backend:$IMAGE_TAG
+            docker pull ${{secrets.DOCKER_USERNAME}}/pollingapp-frontend:$IMAGE_TAG
+
+            # Create a docker-compose.yml file
+            echo "
+            version: '3.8'
+            services:
+              backend:
+                image: ${{secrets.DOCKER_USERNAME}}/pollingapp-backend:latest
+                ports:
+                  - '3030:3030'
+                environment:
+                  - MONGODB_URI=${{ secrets.MONGODB_URI }}
+                  - JWT_SECRET=${{ secrets.JWT_SECRET }}
+                  - ORIGIN=${{ORIGIN}}
+
+              frontend:
+                image: ${{secrets.DOCKER_USERNAME}}/pollingapp-frontend:latest
+                ports:
+                  - '3000:3000'
+                environment:
+                  - NEXT_PUBLIC_CORBADO_PROJECT_ID=${{NEXT_PUBLIC_CORBADO_PROJECT_ID}}
+                  - CORBADO_API_SECRET=${{CORBADO_API_SECRET}}
+                  - FRONTEND_API=${{FRONTEND_API}}
+                  - BACKEND_API=${{BACKEND_API}}
+                  - NEXT_PUBLIC_BACKEND_URL=${{NEXT_PUBLIC_BACKEND_URL}}
+                  - NEXT_PUBLIC_FRONTEND_URL=${{NEXT_PUBLIC_FRONTEND_URL}}
+                depends_on:
+                  - backend
+            " > /home/ubuntu/docker-compose.yml
+
+            # Check if docker-compose.yml was created
+            cat /home/ubuntu/docker-compose.yml
+
+            # Start the containers with Docker Compose
+            cd /home/ubuntu
+            sudo docker-compose up -d
